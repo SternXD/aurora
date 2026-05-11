@@ -22,8 +22,10 @@
 
 #ifdef WEBGPU_DAWN
 #include "../dawn/BackendBinding.hpp"
+#if !defined(AURORA_WINDOWS_STORE)
 #include "../dawn/TracyPlatform.hpp"
 #include <dawn/native/DawnNative.h>
+#endif
 #endif
 
 namespace aurora::gx {
@@ -65,6 +67,10 @@ bool g_bcTexturesSupported = false;
 bool g_astcTexturesSupported = false;
 bool g_textureComponentSwizzleSupported = false;
 static std::atomic_bool g_initialized = false;
+
+#if defined(AURORA_WINDOWS_STORE)
+extern "C" __declspec(dllimport) void* uwp_GetWindowReference();
+#endif
 
 namespace {
 
@@ -732,6 +738,7 @@ static bool create_surface() {
     return false;
   }
   window::SurfaceLock surfaceLock;
+#ifndef AURORA_WINDOWS_STORE
   const auto chainedDescriptor = utils::SetupWindowAndGetSurfaceDescriptor(window);
   if (!chainedDescriptor) {
     Log.error("Failed to create surface descriptor for current window");
@@ -741,6 +748,16 @@ static bool create_surface() {
       .nextInChain = chainedDescriptor.get(),
       .label = "Surface",
   };
+#else
+  wgpu::SurfaceDescriptorFromWindowsCoreWindow surfaceDesc{};
+  surfaceDesc.sType = wgpu::SType::SurfaceDescriptorFromWindowsCoreWindow;
+  surfaceDesc.coreWindow = uwp_GetWindowReference();
+  const wgpu::SurfaceDescriptor surfaceDescriptor{
+      .nextInChain = reinterpret_cast<const wgpu::ChainedStruct*>(&surfaceDesc),
+      .label = "Surface",
+  };
+#endif
+
   release_surface_locked();
   g_surface = g_instance.CreateSurface(&surfaceDescriptor);
   if (!g_surface) {
@@ -761,6 +778,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
         .requiredFeatures = requiredInstanceFeatures.data(),
     };
 #ifdef WEBGPU_DAWN
+#if !defined(AURORA_WINDOWS_STORE)
     dawn::native::DawnInstanceDescriptor dawnInstanceDescriptor;
     dawnInstanceDescriptor.backendValidationLevel = dawn::native::BackendValidationLevel::Disabled;
     dawnInstanceDescriptor.SetLoggingCallback(wgpu_log);
@@ -768,6 +786,7 @@ bool initialize(AuroraBackend auroraBackend, bool allowCpu) {
     dawnInstanceDescriptor.platform = tracy_dawn_platform();
 #endif
     instanceDescriptor.nextInChain = &dawnInstanceDescriptor;
+#endif
 #endif
     g_instance = wgpu::CreateInstance(&instanceDescriptor);
     if (!g_instance) {
